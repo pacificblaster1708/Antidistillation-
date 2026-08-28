@@ -1,0 +1,67 @@
+{
+  "builder_name": "parquet",
+  "citation": "",
+  "config_name": "main",
+  "dataset_name": "gsm8k-platinum",
+  "dataset_size": 663954,
+  "description": "",
+  "download_size": 380973,
+  "features": {
+    "problem": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "solution": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "idx": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "input_ids": {
+      "feature": {
+        "dtype": "int32",
+        "_type": "Value"
+      },
+      "_type": "List"
+    },
+    "prompt_len": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "completion": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "completion_af": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "is_correct": {
+      "dtype": "bool",
+      "_type": "Value"
+    },
+    "is_correct_af": {
+      "dtype": "bool",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 1044927,
+  "splits": {
+    "test": {
+      "name": "test",
+      "num_bytes": 663954,
+      "num_examples": 1209,
+      "dataset_name": "gsm8k-platinum"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}

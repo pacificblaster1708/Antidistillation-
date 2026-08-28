@@ -1,0 +1,119 @@
+{
+  "mode": "normal",
+  "run_name": "normal_tau1",
+  "tau": 1.0,
+  "lam": 0.0,
+  "eps": 0.0,
+  "train_traces": {
+    "stage": "train/normal",
+    "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "split": "train",
+    "use_ads": false,
+    "n": 5231,
+    "tau": 1.0,
+    "lam": 0.0,
+    "eps": 0.0,
+    "accuracy": 0.8839610017205123,
+    "completion_tokens": {
+      "count": 5231,
+      "mean": 469.62492831198625,
+      "std": 165.88820512319737,
+      "min": 173.0,
+      "p25": 356.0,
+      "p50": 438.0,
+      "p75": 538.0,
+      "max": 1024.0
+    },
+    "path": "experiments/traces/normal_tau1_train",
+    "accuracy_af": 0.9128273752628561
+  },
+  "holdout_traces": {
+    "stage": "holdout",
+    "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "split": "holdout",
+    "use_ads": false,
+    "n": 2242,
+    "tau": 0.0,
+    "lam": 0.0,
+    "eps": 0.0,
+    "accuracy": 0.9161462979482605,
+    "completion_tokens": {
+      "count": 2242,
+      "mean": 447.00535236396075,
+      "std": 137.3966888435136,
+      "min": 174.0,
+      "p25": 349.0,
+      "p50": 427.0,
+      "p75": 522.0,
+      "max": 1024.0
+    },
+    "path": "experiments/traces/holdout",
+    "accuracy_af": 0.9219446922390723
+  },
+  "student_test": {
+    "stage": "test/student",
+    "model": "experiments/normal_tau1/student/final",
+    "split": "test",
+    "use_ads": false,
+    "n": 1209,
+    "tau": 0.0,
+    "lam": 0.0,
+    "eps": 0.0,
+    "accuracy": 0.8130686517783292,
+    "completion_tokens": {
+      "count": 1209,
+      "mean": 787.0860215053764,
+      "std": 279.8934440011798,
+      "min": 267.0,
+      "p25": 490.0,
+      "p50": 1024.0,
+      "p75": 1026.0,
+      "max": 1399.0
+    },
+    "path": "experiments/traces/normal_tau1_eval_student",
+    "accuracy_af": 0.815550041356493
+  },
+  "teacher_test": {
+    "stage": "test/teacher/normal",
+    "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "split": "test",
+    "use_ads": false,
+    "n": 1209,
+    "tau": 1.0,
+    "lam": 0.0,
+    "eps": 0.0,
+    "accuracy": 0.8899917287014061,
+    "completion_tokens": {
+      "count": 1209,
+      "mean": 466.95368072787426,
+      "std": 157.7479258530371,
+      "min": 178.0,
+      "p25": 360.0,
+      "p50": 440.0,
+      "p75": 543.0,
+      "max": 1024.0
+    },
+    "path": "experiments/traces/normal_tau1_eval_teacher",
+    "accuracy_af": 0.9098428453267163
+  },
+  "distillation": {
+    "student": "Qwen/Qwen2.5-3B",
+    "train_traces": "experiments/traces/normal_tau1_train",
+    "num_train": 5231,
+    "num_eval": 2242,
+    "final_model": "experiments/normal_tau1/student/final",
+    "metrics": {
+      "train_runtime": 1559.3226,
+      "train_samples_per_second": 10.064,
+      "train_steps_per_second": 0.629,
+      "total_flos": 1.9625929375639142e+17,
+      "train_loss": 0.21497839139385205,
+      "epoch": 3.0,
+      "eval_loss": 0.219948410987854,
+      "eval_runtime": 72.1324,
+      "eval_samples_per_second": 31.082,
+      "eval_steps_per_second": 15.541
+    }
+  },
+  "wall_seconds": 3821.9
+}

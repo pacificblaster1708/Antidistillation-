@@ -1,0 +1,23 @@
+{
+  "_data_files": [
+    {
+      "filename": "data-00000-of-00001.arrow"
+    }
+  ],
+  "_fingerprint": "23c720e2e00a00ed",
+  "_format_columns": [
+    "completion",
+    "completion_af",
+    "idx",
+    "input_ids",
+    "is_correct",
+    "is_correct_af",
+    "problem",
+    "prompt_len",
+    "solution"
+  ],
+  "_format_kwargs": {},
+  "_format_type": null,
+  "_output_all_columns": false,
+  "_split": null
+}
