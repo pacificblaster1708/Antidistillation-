@@ -181,48 +181,110 @@ class ADSLogitsProcessor(LogitsProcessor):
     r"""
     Adds the antidistillation term to the teacher's next-token logits:
 
-        scores <- scores + (lam / (2 * eps)) * (logits_{theta + eps*g} - logits_{theta - eps*g})
+        scores <- scores + lam_t * (logits_{theta + eps*g} - logits_{theta - eps*g}) / (2 * eps)
 
     `g` is the proxy student's gradient of the *holdout* language-modelling loss
     (see grads.py). The bracket is a central finite difference, so it estimates
     the directional derivative  g^T d/dtheta logits_theta(token)  scaled by 2*eps.
     Tokens whose likelihood under the proxy student *rises* along +g are boosted,
     and +g is the ascent direction of the student's loss -- i.e. the teacher is
-    nudged toward tokens that would teach a distilling student the wrong lesson,
-    while `lam` controls how far it is willing to go.
+    nudged toward tokens that would teach a distilling student the wrong lesson.
+
+    `lam_t` is dynamic: after each token x_t is sampled we observe the scalar
+    signal d_t = delta(x_t), the antidistillation push specifically on x_t.
+    We maintain per-sequence Adam-style first and second moment estimates of d_t
+    and update lam according to:
+
+        m_t  = beta1 * m_{t-1} + (1 - beta1) * d_t
+        v_t  = beta2 * v_{t-1} + (1 - beta2) * d_t^2
+        m_hat, v_hat = bias-corrected moments
+        lam_{t+1} = lam0 * |m_hat| / (sqrt(v_hat) + eta)
+
+    This boosts lam when the signal is consistent (high mean, low variance) and
+    attenuates it when the signal is noisy (high variance relative to the mean).
+    State is tracked per-sequence in the batch, so each sequence in a batch
+    maintains an independent lam trajectory.
 
     Note on ordering: HuggingFace merges custom processors *before* the
     temperature / top-p warpers, so the sampled distribution is
         softmax( top_p( (teacher_logits + ads_term) / tau ) )
-    and the effective strength of the term is therefore lam/tau. This matches
+    and the effective strength of the term is therefore lam_t/tau. This matches
     the reference implementation.
     """
 
-    def __init__(self, plus: IncrementalLM, minus: IncrementalLM, lam: float, eps: float,
-                 prompt_attention_mask: torch.LongTensor):
+    def __init__(self, plus: IncrementalLM, minus: IncrementalLM, lam0: float, eps: float,
+                 prompt_attention_mask: torch.LongTensor,
+                 beta1: float = 0.8, beta2: float = 0.95, eta: float = 1e-8):
         super().__init__()
         if eps <= 0:
             raise ValueError("eps must be > 0")
+        if not (0.0 < beta1 < 1.0 and 0.0 < beta2 < 1.0):
+            raise ValueError("beta1 and beta2 must be in (0, 1)")
         self.plus, self.minus = plus, minus
-        self.lam, self.eps = float(lam), float(eps)
+        self.lam0, self.eps = float(lam0), float(eps)
+        self.beta1, self.beta2, self.eta = beta1, beta2, float(eta)
         self.prompt_attention_mask = prompt_attention_mask
         self.calls = 0
+        # Per-sequence Adam state; initialised on the first call once we know
+        # the batch size and device.
+        self._m: Optional[torch.Tensor] = None   # [B, 1] first moment
+        self._v: Optional[torch.Tensor] = None   # [B, 1] second moment
+        self._prev_delta: Optional[torch.Tensor] = None  # [B, V] delta from last step
+
+    def _init_state(self, bsz: int, device: torch.device) -> None:
+        self._m = torch.zeros(bsz, 1, device=device)
+        self._v = torch.zeros(bsz, 1, device=device)
+        self._prev_delta = None
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        bsz = input_ids.shape[0]
+        device = scores.device
+
+        # Initialise or reset state when batch size changes (e.g. new generation).
+        if self._m is None or self._m.shape[0] != bsz:
+            self._init_state(bsz, device)
+
         # Prompts are left padded, so every token generated after the prompt is
         # attended: pad the recorded prompt mask on the right with ones.
         pad = input_ids.shape[1] - self.prompt_attention_mask.shape[1]
         attention_mask = F.pad(self.prompt_attention_mask, (0, pad), value=1)
 
-        up = self.plus.next_logits(input_ids, attention_mask).float()
-        down = self.minus.next_logits(input_ids, attention_mask).float()
+        up = self.plus.next_logits(input_ids, attention_mask).float()   # [B, V]
+        down = self.minus.next_logits(input_ids, attention_mask).float() # [B, V]
         if up.shape[-1] != scores.shape[-1]:
             raise RuntimeError(
                 f"vocabulary mismatch: teacher emits {scores.shape[-1]} logits but the proxy "
                 f"student emits {up.shape[-1]}. Teacher and proxy student must share a tokenizer."
             )
+
+        delta = (up - down) / (2.0 * self.eps)  # [B, V]; finite-difference estimate
+
+        # --- Adam update of lam_t -----------------------------------------
+        # At step t>0 we know which token x_{t-1} was sampled (last column of
+        # input_ids), so we can retrieve its scalar signal d_{t-1} from the
+        # delta vector we cached in the previous call.
+        if self._prev_delta is not None:
+            # x_{t-1} is the most recently appended token for each sequence.
+            last_tokens = input_ids[:, -1].unsqueeze(1)          # [B, 1]
+            d = self._prev_delta.gather(1, last_tokens).float()  # [B, 1]
+
+            self._m = self.beta1 * self._m + (1.0 - self.beta1) * d
+            self._v = self.beta2 * self._v + (1.0 - self.beta2) * d * d
+
+            # Bias correction (self.calls is already incremented below, so use
+            # calls+1 for the current update index).
+            t = float(self.calls + 1)
+            m_hat = self._m / (1.0 - self.beta1 ** t)
+            v_hat = self._v / (1.0 - self.beta2 ** t)
+
+            lam_t = self.lam0 * m_hat.abs() / (v_hat.sqrt() + self.eta)  # [B, 1]
+        else:
+            # First token: no signal yet, fall back to the base lam0.
+            lam_t = torch.full((bsz, 1), self.lam0, device=device)
+
+        self._prev_delta = delta.detach()
         self.calls += 1
-        return scores.float() + (self.lam / (2.0 * self.eps)) * (up - down)
+        return scores.float() + lam_t * delta
 
 
 # --------------------------------------------------------------------------- #
