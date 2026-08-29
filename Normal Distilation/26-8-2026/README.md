@@ -1,7 +1,5 @@
 # Antidistillation Sampling — minimal, two-mode
 
-A stripped-down, working reimplementation of [`locuslab/antidistillation-sampling`](https://antidistillation.com).
-Two run modes, one boolean pair, nothing else:
 
 ```bash
 ADS=false NORMAL=true  python run.py     # plain distillation
