@@ -1,0 +1,43 @@
+# Experiment outputs
+experiments/
+outputs/
+runs/
+*.log
+
+# Test fixtures and scratch
+tests/fixtures/
+tests/_tmp/
+/tmp_test/
+
+# Caches
+topk_cache*/
+*_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.python-version
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Weights & Biases
+wandb/
+
+# Hugging Face cache (if HF_HOME is set inside the repo)
+.hf_cache/
