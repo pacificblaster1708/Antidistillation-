@@ -186,6 +186,7 @@ bash verify.sh --full
 
 The tests use tiny local models; they do not download the 7B teacher. They
 exercise online and cached paths, cache-contract failures, cross/shared modes,
+CPU and distributed initialization, the exact compressed K+tail objective,
 and interruption/resume correctness.
 
 ## Reproducibility

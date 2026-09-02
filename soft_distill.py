@@ -2085,13 +2085,19 @@ def main():
         run_validate_cache(args)
         return
 
-    from accelerate import Accelerator, PartialState
+    from accelerate import Accelerator
 
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-    # Gradient accumulation has to be known before the Accelerator is built, and
-    # it depends on the world size -- PartialState gives us that first.
-    world = PartialState().num_processes
+    # Read the launcher-provided world size without constructing PartialState.
+    # Constructing PartialState first can lock Accelerate to CUDA and then make
+    # a later CPU Accelerator fail in torchrun-based verification.
+    try:
+        world = int(os.environ.get("WORLD_SIZE", "1"))
+    except ValueError as exc:
+        raise ValueError(f"Invalid WORLD_SIZE={os.environ.get('WORLD_SIZE')!r}.") from exc
+    if world < 1:
+        raise ValueError(f"WORLD_SIZE must be >= 1, got {world}.")
     grad_accum = 1
     if args.mode == "train":
         per_step = args.per_device_batch_size * world
@@ -2103,7 +2109,13 @@ def main():
             )
         grad_accum = args.batch_size // per_step
 
-    accelerator = Accelerator(gradient_accumulation_steps=grad_accum)
+    cpu_requested = os.environ.get("ACCELERATE_USE_CPU", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    accelerator = Accelerator(
+        gradient_accumulation_steps=grad_accum,
+        cpu=cpu_requested,
+    )
     os.makedirs(args.output_dir, exist_ok=True)
 
     if args.mode == "precompute":

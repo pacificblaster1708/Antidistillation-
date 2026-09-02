@@ -27,6 +27,9 @@ require("--resume_from_checkpoint")
 require('choices=["train", "precompute", "validate_cache"]')
 require('"data_signature": data_signature')
 require("def validate_completed_run")
+require('os.environ.get("WORLD_SIZE", "1")')
+require("cpu=cpu_requested")
+assert "from accelerate import Accelerator, PartialState" not in SOURCE
 require("--overwrite_cache")
 
 for path in (ROOT / "slurm" / "top64_precompute.slurm", ROOT / "slurm" / "top64_train_array.slurm"):
