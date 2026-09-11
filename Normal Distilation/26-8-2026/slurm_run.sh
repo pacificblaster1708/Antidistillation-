@@ -26,7 +26,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # =============================================================================
 # Configuration
 # =============================================================================
-MODE=normal        # normal | ads
+MODE=ads           # normal | ads
 EXP_DIR=experiments
 
 TEACHER=deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
