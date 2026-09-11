@@ -117,10 +117,10 @@ def generate_traces(cfg: Config) -> dict:
             step = cfg.eps * stats_p["grad_rms"]
             print(f"[ads] param RMS {stats_p['param_rms']:.3e} | grad RMS {stats_p['grad_rms']:.3e} "
                   f"| eps*grad RMS {step:.3e} over {stats_p['num_params']:,} params")
-            if dtype in (torch.float16, torch.bfloat16):
-                resolution = 1e-3 if dtype is torch.float16 else 8e-3
+            if proxy_dtype in (torch.float16, torch.bfloat16):
+                resolution = 1e-3 if proxy_dtype is torch.float16 else 8e-3
                 if step < stats_p["param_rms"] * resolution:
-                    print(f"[ads] WARNING: eps*grad is small next to {dtype} resolution; the two "
+                    print(f"[ads] WARNING: eps*grad is small next to {proxy_dtype} resolution; the two "
                           f"perturbed students may be numerically identical. Raise --eps or set "
                           f"--dtype=float32 for the proxy students.")
     else:
