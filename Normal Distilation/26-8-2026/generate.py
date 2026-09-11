@@ -98,8 +98,12 @@ def generate_traces(cfg: Config) -> dict:
             raise SystemExit(f"ADS needs proxy-student gradients; {cfg.grad_path} does not exist. "
                              f"Run the grads stage first.")
         grads, meta = load_grads(cfg.grad_path)
-        plus_model = load_causal_lm(cfg.proxy_student, dtype, attn, device=accelerator.device)
-        minus_model = load_causal_lm(cfg.proxy_student, dtype, attn, device=accelerator.device)
+        
+        # ADS perturbation is sensitive. If main model is bf16, use fp16 for proxies
+        # to get better mantissa resolution (1e-3 vs 8e-3).
+        proxy_dtype = torch.float16 if dtype == torch.bfloat16 else dtype
+        plus_model = load_causal_lm(cfg.proxy_student, proxy_dtype, attn, device=accelerator.device)
+        minus_model = load_causal_lm(cfg.proxy_student, proxy_dtype, attn, device=accelerator.device)
         vocab = align_vocab(tokenizer, model, plus_model, minus_model)
         if meta.get("vocab_size") not in (None, vocab):
             raise SystemExit(f"gradients were computed with vocab_size={meta['vocab_size']} but "
