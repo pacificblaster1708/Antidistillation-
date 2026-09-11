@@ -16,10 +16,10 @@
 
 #SBATCH --job-name=antidistil
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4          # one process per GPU
-#SBATCH --gres=gpu:a100_40gb:4       # 4 × 40 GB A100
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:a100_40gb:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
+#SBATCH --mem=64G
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/%j_antidistil.out
 #SBATCH --error=logs/%j_antidistil.err
@@ -56,8 +56,8 @@ else
     GRAD_BATCH=2
 fi
 
-# Global train batch 8 across 4 GPUs → per_device=2, accum=1
-TRAIN_BATCH=8
+# Single GPU: global batch = per_device batch (no accumulation needed)
+TRAIN_BATCH=4
 PER_DEVICE_BATCH=2
 
 # =============================================================================
@@ -89,12 +89,12 @@ fi
 echo "============================================================"
 echo "Job ID   : $SLURM_JOB_ID"
 echo "Node     : $(hostname)"
-echo "GPUs     : $SLURM_GPUS_ON_NODE  (40 GB A100 × 4)"
+echo "GPUs     : 1 × 40 GB A100"
 echo "Mode     : $MODE"
 echo "dtype    : auto (mixed precision)"
 echo "============================================================"
 
-srun python run.py \
+python run.py \
     $MODE_FLAGS \
     --attn_impl=flash_attention_2 \
     \
@@ -126,6 +126,6 @@ srun python run.py \
     --num_epochs=3 \
     --train_max_length=4096 \
     \
-    --num_gpus=4 \
-    --launcher=accelerate \
+    --num_gpus=1 \
+    --launcher=python \
     --eval_teacher=true
