@@ -81,7 +81,8 @@ def generate_traces(cfg: Config) -> dict:
     if main:
         banner(f"GENERATE [{stage['label']}]",
                json.dumps({**{k: v for k, v in stage.items()},
-                           "tau": cfg.tau, "lam": cfg.lam, "eps": cfg.eps}, indent=2))
+                           "tau": cfg.tau, "lam_min": cfg.lam_min, "lam_max": cfg.lam_max,
+                           "eps": cfg.eps}, indent=2))
 
     dtype = resolve_dtype(cfg.dtype)
     attn = resolve_attn(cfg.attn_impl)
@@ -176,11 +177,40 @@ def generate_traces(cfg: Config) -> dict:
     )
 
     # ------------------------------------------------------------ generation
+    chk_path = stage["out"] + "_checkpoint.jsonl"
+    saved_completions: Dict[int, str] = {}
+    if os.path.exists(chk_path):
+        try:
+            with open(chk_path, "r", encoding="utf-8") as fh:
+                for l in fh:
+                    if l.strip():
+                        data = json.loads(l)
+                        saved_completions[int(data["idx"])] = data["completion"]
+            if main and len(saved_completions) > 0:
+                print(f"[gen] Resuming from partial checkpoint: {len(saved_completions)} completion(s) already saved.")
+        except Exception as e:
+            if main:
+                print(f"[gen] Warning: could not load partial checkpoint ({e}). Starting fresh.")
+            saved_completions = {}
+
     completions: List[str] = []
+    shard_indices = list(shard["idx"])
+    current_offset = 0
+    chk_file = open(chk_path, "a", encoding="utf-8") if main else None
+
     for batch in tqdm(loader, total=len(loader), desc=f"generate[{stage['label']}]",
                       disable=not main):
-        batch = {k: v.to(accelerator.device) for k, v in batch.items()}
-        prompt_width = batch["input_ids"].shape[1]
+        bsz = batch["input_ids"].shape[0]
+        batch_indices = shard_indices[current_offset : current_offset + bsz]
+        current_offset += bsz
+
+        if all(idx in saved_completions for idx in batch_indices):
+            for idx in batch_indices:
+                completions.append(saved_completions[idx])
+            continue
+
+        batch_device = {k: v.to(accelerator.device) for k, v in batch.items()}
+        prompt_width = batch_device["input_ids"].shape[1]
 
         processors = None
         if stage["use_ads"]:
@@ -188,18 +218,35 @@ def generate_traces(cfg: Config) -> dict:
             # to this batch's prompts and its batch size.
             plus.reset(); minus.reset()
             processors = LogitsProcessorList(
-                [ADSLogitsProcessor(plus, minus, cfg.lam, cfg.eps, batch["attention_mask"])]
+                [ADSLogitsProcessor(plus, minus, cfg.lam_min, cfg.eps,
+                                    batch_device["attention_mask"],
+                                    lam_max=cfg.lam_max, beta=cfg.beta,
+                                    gamma=cfg.gamma, sigma2_prior=cfg.sigma2_prior,
+                                    warmup_steps=cfg.warmup_steps,
+                                    warmup_val=cfg.warmup_val)]
             )
 
         with torch.inference_mode():
             out = model.generate(
-                **batch, **gen_kwargs,
+                **batch_device, **gen_kwargs,
                 logits_processor=processors,
                 renormalize_logits=bool(stage["use_ads"]),
             )
+        batch_comps = []
         for row in out[:, prompt_width:]:
-            completions.append(strip_terminals(tokenizer.decode(row, skip_special_tokens=False),
-                                               tokenizer).rstrip())
+            comp = strip_terminals(tokenizer.decode(row, skip_special_tokens=False),
+                                   tokenizer).rstrip()
+            batch_comps.append(comp)
+            completions.append(comp)
+
+        if main and chk_file is not None:
+            for idx, comp in zip(batch_indices, batch_comps):
+                saved_completions[idx] = comp
+                chk_file.write(json.dumps({"idx": idx, "completion": comp}) + "\n")
+            chk_file.flush()
+
+    if chk_file is not None:
+        chk_file.close()
 
     shard = shard.add_column("completion", completions)
 
@@ -244,6 +291,8 @@ def generate_traces(cfg: Config) -> dict:
             shutil.rmtree(stage["out"])
         merged.save_to_disk(stage["out"])
         merged.to_parquet(stage["out"] + ".parquet")
+        if os.path.exists(chk_path):
+            os.remove(chk_path)
 
         lengths = [len(tokenizer.encode(c, add_special_tokens=False)) for c in merged["completion"]]
         summary = {
@@ -252,7 +301,7 @@ def generate_traces(cfg: Config) -> dict:
             "split": stage["split"],
             "use_ads": stage["use_ads"],
             "n": len(merged),
-            "tau": cfg.tau, "lam": cfg.lam, "eps": cfg.eps,
+            "tau": cfg.tau, "lam_min": cfg.lam_min, "lam_max": cfg.lam_max, "eps": cfg.eps,
             "accuracy": float(sum(merged["is_correct"])) / len(merged),
             "completion_tokens": describe(lengths),
             "path": stage["out"],

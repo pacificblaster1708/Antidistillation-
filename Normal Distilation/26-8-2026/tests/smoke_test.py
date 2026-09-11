@@ -82,7 +82,7 @@ def main():
     check("mode banner says NORMAL", "MODE: NORMAL" in out_normal)
     normal = load_results("normal_tau1")
     check("results.json written", normal["mode"] == "normal")
-    check("lam forced to 0", normal["lam"] == 0.0)
+    check("lam forced to 0", normal["lam_min"] == 0.0)
     check("training traces produced", normal["train_traces"]["n"] == 8)
     check("training traces are ADS-free", normal["train_traces"]["use_ads"] is False)
     check("student scored on test", normal["student_test"]["n"] == 6)
@@ -95,18 +95,19 @@ def main():
     check("SFT evaluated on holdout", "eval_loss" in normal["distillation"]["metrics"])
 
     # ---------------------------------------------------------------- ADS
-    out_ads = run_pipeline(fx, ["--ads=true", "--normal=false", "--lam=0.5", "--eps=0.01"],
+    out_ads = run_pipeline(fx, ["--ads=true", "--normal=false",
+                                "--lam_min=0.01", "--lam_max=0.5", "--eps=0.01"],
                            "ADS=true NORMAL=false")
     print("\n[ads] pipeline")
     check("mode banner says ADS", "MODE: ADS" in out_ads)
-    ads = load_results("ads_tau1_lam0.5_eps0.01")
+    ads = load_results("ads_tau1_lmin0.01_lmax0.5_eps0.01")
     check("results.json written", ads["mode"] == "ads")
     check("proxy gradients saved", os.path.exists(os.path.join(EXP, "proxy_student_grads.pt")))
     check("training traces used ADS", ads["train_traces"]["use_ads"] is True)
     check("teacher eval used ADS", ads["teacher_test"]["use_ads"] is True)
     check("student eval did NOT use ADS", ads["student_test"]["use_ads"] is False)
     check("student weights saved",
-          os.path.exists(os.path.join(EXP, "ads_tau1_lam0.5_eps0.01", "student",
+          os.path.exists(os.path.join(EXP, "ads_tau1_lmin0.01_lmax0.5_eps0.01", "student",
                                       "final", "config.json")))
 
     import torch
@@ -123,7 +124,7 @@ def main():
     from datasets import load_from_disk
     plain = load_from_disk(os.path.join(EXP, "traces", "normal_tau1_train"))["completion"]
     poisoned = load_from_disk(os.path.join(EXP, "traces",
-                                           "ads_tau1_lam0.5_eps0.01_train"))["completion"]
+                                           "ads_tau1_lmin0.01_lmax0.5_eps0.01_train"))["completion"]
     differing = sum(1 for a, b in zip(plain, poisoned) if a != b)
     check("same number of traces", len(plain) == len(poisoned))
     check("ADS traces differ from plain traces", differing > 0,
@@ -133,7 +134,8 @@ def main():
 
     # ------------------------------------------------------- resumability
     print("\n[resume] a second run skips completed stages")
-    again = run_pipeline(fx, ["--ads=true", "--normal=false", "--lam=0.5", "--eps=0.01"],
+    again = run_pipeline(fx, ["--ads=true", "--normal=false",
+                               "--lam_min=0.01", "--lam_max=0.5", "--eps=0.01"],
                          "ADS=true NORMAL=false (resume)")
     check("skipped previously finished stages", again.count("skip") >= 5,
           f"{again.count('skip')} stages skipped")

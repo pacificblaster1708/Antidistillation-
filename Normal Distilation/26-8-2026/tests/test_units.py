@@ -34,11 +34,11 @@ def test_config_modes():
     print("\n[config] mode selection")
     cfg = Config.load(["--ads=false", "--normal=true"])
     check("NORMAL selected", cfg.mode == "normal" and not cfg.ads)
-    check("NORMAL forces lam=0", cfg.lam == 0.0 and cfg.eps == 0.0)
+    check("NORMAL forces lam=0", cfg.lam_min == 0.0 and cfg.lam_max == 0.0 and cfg.eps == 0.0)
 
-    cfg = Config.load(["--ads=true", "--normal=false", "--lam=0.2", "--eps=0.01"])
+    cfg = Config.load(["--ads=true", "--normal=false", "--lam_min=0.02", "--lam_max=0.1", "--eps=0.01"])
     check("ADS selected", cfg.mode == "ads" and cfg.ads)
-    check("ADS keeps lam", cfg.lam == 0.2 and cfg.eps == 0.01)
+    check("ADS keeps lam_min/lam_max", cfg.lam_min == 0.02 and cfg.lam_max == 0.1 and cfg.eps == 0.01)
 
     for bad in (["--ads=true", "--normal=true"], ["--ads=false", "--normal=false"]):
         try:
@@ -134,7 +134,7 @@ def test_incremental_cache(tok, proxy):
 # --------------------------------------------------------------------------- #
 def test_ads_term(tok, teacher, proxy_path):
     print("\n[ads] the antidistillation term")
-    lam, eps = 0.3, 1e-2
+    lam_min, lam_max, eps = 0.01, 0.3, 1e-2
     plus_model = load_causal_lm(proxy_path, torch.float32, "eager")
     minus_model = load_causal_lm(proxy_path, torch.float32, "eager")
     align_vocab(tok, plus_model, minus_model)
@@ -153,17 +153,19 @@ def test_ads_term(tok, teacher, proxy_path):
     plus_model.eval(); minus_model.eval()
     plus, minus = IncrementalLM(plus_model), IncrementalLM(minus_model)
 
+    warmup_val = 0.04   # ADSLogitsProcessor default; first call uses this, not lam_min
     ids = torch.tensor([[5, 9, 3, 7, 11, 2]])
     mask = torch.ones_like(ids)
-    proc = ADSLogitsProcessor(plus, minus, lam, eps, mask)
+    proc = ADSLogitsProcessor(plus, minus, lam_min, eps, mask, lam_max=lam_max)
     scores = torch.zeros(1, len(tok))
     out = proc(ids, scores.clone())
 
     with torch.inference_mode():
         up = plus_model(input_ids=ids, attention_mask=mask).logits[:, -1, :]
         down = minus_model(input_ids=ids, attention_mask=mask).logits[:, -1, :]
-    manual = scores + (lam / (2 * eps)) * (up - down)
-    check("matches lam/(2*eps)*(f(+) - f(-))", torch.allclose(out, manual, atol=1e-4),
+    # First call: _prev_delta is None so lam_t = warmup_val, not lam_min
+    manual = scores + warmup_val * (up - down) / (2.0 * eps)
+    check("matches warmup_val/(2*eps)*(f(+) - f(-))", torch.allclose(out, manual, atol=1e-4),
           f"max delta {float((out - manual).abs().max()):.2e}")
     check("term is non-trivial", float(out.abs().max()) > 1e-3,
           f"max |term| {float(out.abs().max()):.3e}")

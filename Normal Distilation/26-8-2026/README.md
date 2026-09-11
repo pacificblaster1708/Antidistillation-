@@ -8,7 +8,7 @@ ADS=false NORMAL=true  python run.py     # plain distillation
 ADS=true  NORMAL=false python run.py     # antidistillation sampling
 ```
 
-Any other combination of the two flags is rejected. In `NORMAL` mode `lam` and
+Any other combination of the two flags is rejected. In `NORMAL` mode `lam_min`, `lam_max` and
 `eps` are forced to `0` and the proxy student is never loaded; in `ADS` mode the
 gradient stage runs and the teacher samples with the antidistillation term.
 Everything else — models, data, SFT recipe, evaluation — is identical between
@@ -39,7 +39,7 @@ ADS=false NORMAL=true python run.py --exp_dir=experiments --dataset=gsm8k --tau=
 
 # antidistillation, same everything else
 ADS=true NORMAL=false python run.py --exp_dir=experiments --dataset=gsm8k \
-    --tau=1.0 --lam=0.15 --eps=1e-2
+    --tau=1.0 --lam_min=0.01 --lam_max=0.075 --eps=1e-3
 ```
 
 Both write `experiments/<run_name>/results.json`. Compare them:
@@ -67,7 +67,7 @@ The stages are ordinary scripts; `run.py` just launches them in order.
 
 ```bash
 python generate.py --ads=true --normal=false --gen_split=train --gen_use_ads=true \
-       --gen_out=experiments/traces/my_traces --lam=0.15 --eps=1e-2
+       --gen_out=experiments/traces/my_traces --lam_min=0.01 --lam_max=0.075 --eps=1e-3
 python grads.py    --ads=true --normal=false
 python distill.py  --ads=false --normal=true
 ```
@@ -96,17 +96,18 @@ own holdout traces — the direction in the student's parameter space that makes
 `θ + εg` and `θ − εg`. At every generated token:
 
 ```
-teacher_logits  +=  (lam / (2ε)) · ( logits_{θ+εg}(token) − logits_{θ−εg}(token) )
+teacher_logits  +=  (lam_t / (2ε)) · ( logits_{θ+εg}(token) − logits_{θ−εg}(token) )
 ```
 
-The bracket is a central finite difference, so the added term is `lam` times the
+The bracket is a central finite difference, so the added term is `lam_t` times the
 directional derivative of the student's token log-likelihood along `g`. Tokens
-that would push a distilling student uphill in loss get boosted; `lam` sets how
-much utility the teacher is willing to trade for that.
+that would push a distilling student uphill in loss get boosted; `lam_t` is dynamic —
+adapted per-token via an exponentially weighted Z-score, bounded in `[lam_min, lam_max]`.
+During warmup it is fixed to `warmup_val`.
 
 HuggingFace applies custom logits processors *before* the temperature and top-p
 warpers, so the sampled distribution is `softmax(top_p((teacher_logits + term)/τ))`
-and the effective strength is `lam/τ`. This matches the reference implementation.
+and the effective strength is `lam_t/τ`. This matches the reference implementation.
 
 ---
 
@@ -165,7 +166,7 @@ ADS=true NORMAL=false python run.py \
   --teacher=Qwen/Qwen2.5-1.5B-Instruct --proxy_student=Qwen/Qwen2.5-0.5B \
   --student=Qwen/Qwen2.5-0.5B --student_tokenizer=Qwen/Qwen2.5-0.5B-Instruct \
   --max_train_samples=200 --max_holdout_samples=100 --max_test_samples=100 \
-  --max_new_tokens=512 --gen_batch_size=8 --lam=0.15 --eps=1e-2
+  --max_new_tokens=512 --gen_batch_size=8 --lam_min=0.01 --lam_max=0.075 --eps=1e-3
 ```
 
 CPU works (slowly) for smoke-testing: everything falls back to `sdpa`/fp32
@@ -191,7 +192,7 @@ downloads, ~90 seconds on 2 CPU cores.
 
 What they actually pin down:
 
-- the ADS term equals `lam/(2ε)·(f(θ+εg) − f(θ−εg))` against an independently
+- the ADS term equals `warmup_val/(2ε)·(f(θ+εg) − f(θ−εg))` against an independently
   computed value, and is non-zero
 - `+εg` **increases** the proxy student's holdout loss and `−εg` decreases it —
   i.e. the saved gradient really points the anti-distillation way
@@ -256,5 +257,5 @@ reproducing it.
 13. `wandb` removed; every stage writes `<artifact>.json` and the run writes
     `results.json`.
 14. `grid.py`'s hostname-sharded hyperparameter sweep is gone — this runs one
-    `(tau, lam, eps)` point, per the brief. Loop over it in your own shell for a
+    `(tau, lam_min, lam_max, eps)` point, per the brief. Loop over it in your own shell for a
     sweep; the sentinels make that safe.

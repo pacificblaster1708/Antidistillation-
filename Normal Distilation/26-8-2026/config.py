@@ -89,8 +89,14 @@ class Config:
     holdout_tau: float = 0.0         # temperature for the holdout traces (greedy by default)
     eval_tau: float = 0.0            # temperature when scoring the student on the test split
     top_p: float = 0.95
-    lam: float = 0.15                # ADS strength; only used when ads=true
-    eps: float = 1e-2                # finite-difference step; only used when ads=true
+    lam_min: float = 0.01            # dynamic λ lower bound; only used when ads=true
+    lam_max: float = 0.075           # dynamic λ upper bound; only used when ads=true
+    eps: float = 1e-3                # finite-difference step; only used when ads=true
+    beta: float = 0.9                # EWA decay for λ adaptation
+    gamma: float = 1.0               # sigmoid sharpness for λ adaptation
+    sigma2_prior: float = 1e-8       # variance floor for the Z-score
+    warmup_steps: int = 2            # steps before adaptive λ kicks in
+    warmup_val: float = 0.04         # λ used during warmup
     gen_batch_size: int = 32
     max_new_tokens: int = 1024
     max_prompt_length: int = 512
@@ -147,7 +153,7 @@ class Config:
     @property
     def run_name(self) -> str:
         if self.ads:
-            return f"ads_tau{self.tau:g}_lam{self.lam:g}_eps{self.eps:g}"
+            return f"ads_tau{self.tau:g}_lmin{self.lam_min:g}_lmax{self.lam_max:g}_eps{self.eps:g}"
         return f"normal_tau{self.tau:g}"
 
     @property
@@ -239,13 +245,18 @@ class Config:
                 f"got ADS={self.ads} NORMAL={self.normal}"
             )
         if self.ads:
-            if self.lam <= 0:
-                raise SystemExit("ADS mode needs lam > 0 (lam is the antidistillation strength)")
+            if self.lam_min <= 0:
+                raise SystemExit("ADS mode needs lam_min > 0")
+            if self.lam_max <= self.lam_min:
+                raise SystemExit("ADS mode needs lam_max > lam_min")
             if self.eps <= 0:
                 raise SystemExit("ADS mode needs eps > 0 (finite-difference step size)")
+            if not (0.0 < self.beta < 1.0):
+                raise SystemExit("beta must be in (0, 1)")
         else:
             # In NORMAL mode the ADS term is switched off, full stop.
-            self.lam = 0.0
+            self.lam_min = 0.0
+            self.lam_max = 0.0
             self.eps = 0.0
         if self.train_batch_size % self.per_device_batch_size != 0:
             raise SystemExit("train_batch_size must be a multiple of per_device_batch_size")

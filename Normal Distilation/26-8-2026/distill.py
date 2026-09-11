@@ -138,7 +138,7 @@ def distill(cfg: Config) -> dict:
 
     args = _training_arguments(
         output_dir=cfg.model_path,
-        overwrite_output_dir=True,
+        overwrite_output_dir=False,
         per_device_train_batch_size=cfg.per_device_batch_size,
         per_device_eval_batch_size=cfg.per_device_batch_size,
         gradient_accumulation_steps=accum,
@@ -151,7 +151,8 @@ def distill(cfg: Config) -> dict:
         logging_steps=10,
         logging_strategy="steps",
         eval_strategy="epoch" if eval_ds is not None else "no",
-        save_strategy="no",
+        save_strategy="epoch",
+        save_total_limit=2,
         bf16=use_cuda and dtype is torch.bfloat16,
         fp16=use_cuda and dtype is torch.float16,
         optim="adamw_torch_fused" if use_cuda else "adamw_torch",
@@ -173,7 +174,15 @@ def distill(cfg: Config) -> dict:
         data_collator=CompletionOnlyCollator(pad_token_id=tokenizer.pad_token_id),
     )
 
-    train_out = trainer.train()
+    resume_ckpt = None
+    if os.path.exists(cfg.model_path):
+        ckpts = [d for d in os.listdir(cfg.model_path) if d.startswith("checkpoint-")]
+        if ckpts:
+            resume_ckpt = True
+            if main:
+                print(f"[distill] Found existing checkpoints in {cfg.model_path}; resuming training.")
+
+    train_out = trainer.train(resume_from_checkpoint=resume_ckpt)
     metrics = dict(train_out.metrics)
     if eval_ds is not None:
         metrics.update(trainer.evaluate())

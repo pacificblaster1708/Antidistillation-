@@ -142,7 +142,7 @@ def main() -> None:
     results = {
         "mode": cfg.mode,
         "run_name": cfg.run_name,
-        "tau": cfg.tau, "lam": cfg.lam, "eps": cfg.eps,
+        "tau": cfg.tau, "lam_min": cfg.lam_min, "lam_max": cfg.lam_max, "eps": cfg.eps,
         "train_traces": _read_summary(cfg.train_traces),
         "holdout_traces": _read_summary(cfg.holdout_traces),
         "student_test": _read_summary(cfg.eval_student_traces),
@@ -161,7 +161,7 @@ def main() -> None:
         return f"  {label:<28} {acc * 100:6.2f}%   (n={summary['n']})"
 
     print("\n" + "=" * 78)
-    print(f"RESULTS [{cfg.mode}]  tau={cfg.tau:g} lam={cfg.lam:g} eps={cfg.eps:g}")
+    print(f"RESULTS [{cfg.mode}]  tau={cfg.tau:g} lam_min={cfg.lam_min:g} lam_max={cfg.lam_max:g} eps={cfg.eps:g}")
     print("=" * 78)
     print(line("teacher, training traces", results["train_traces"]))
     print(line("teacher on test", results["teacher_test"]))
